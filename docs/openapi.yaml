@@ -1,0 +1,509 @@
+openapi: 3.0.3
+info:
+  title: API SCDE
+  description: >
+    Communication contract between the frontend and backend of the SCDE project,
+    defined using the OpenAPI standard.
+  version: '0.2'
+
+servers:
+  - url: http://localhost:8008/api/v1
+    description: Development server
+
+components:
+  schemas:
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        data:
+          type: object
+          nullable: true
+          example: null
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: FORBIDDEN
+            message:
+              type: string
+              example: You do not have permission to access this resource.
+
+    User:
+      type: object
+      properties:
+        nombre:
+          type: string
+        apellidos:
+          type: string
+        nia:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          example: student
+        notifications:
+          type: array
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              message: { type: string }
+        subjects:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              year: { type: integer }
+              name: { type: string }
+              semester: { type: integer }
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            access_token: { type: string }
+            refresh_token: { type: string }
+            user:
+              $ref: '#/components/schemas/User'
+        error:
+          type: object
+          nullable: true
+
+    Exam:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        subject_code: { type: string }
+        date: { type: string, format: date }
+        time: { type: string, format: time }
+        review_start: { type: string, format: date-time, nullable: true }
+        review_end: { type: string, format: date-time, nullable: true }
+        graders:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        instances:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExamInstance'
+
+    ExamInstance:
+      type: object
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        apellidos: { type: string }
+        nia: { type: string }
+        status:
+          type: string
+          enum: [PENDING, CORRECTED, REVIEW_REQUESTED, CLOSED]
+        grade:
+          type: number
+          nullable: true
+        pdf_url: { type: string }
+        model: { type: string }
+        annotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Annotation'
+
+    Annotation:
+      type: object
+      properties:
+        id: { type: integer }
+        coordinates: { type: object }
+        type:
+          type: string
+          enum: [TEXT, AUDIO, STYLUS]
+        author: { type: string }
+        created_at: { type: string, format: date-time }
+        color: { type: string }
+        data: { type: string }
+
+    PaginatedExamResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            count: { type: integer }
+            page: { type: integer }
+            page_size: { type: integer }
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/Exam'
+        error:
+          type: object
+          nullable: true
+
+paths:
+
+  /auth/login:
+    post:
+      summary: Autenticación mediante email y contraseña
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Login correcto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      summary: Cierre de sesión
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Sesión cerrada
+
+  /auth/external:
+    post:
+      summary: Login mediante proveedor externo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, token]
+              properties:
+                provider: { type: string }
+                token: { type: string }
+      responses:
+        '200':
+          description: Login externo correcto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/me:
+    get:
+      summary: Perfil del usuario autenticado
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Perfil del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      summary: Renovar token de acceso
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Tokens renovados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /exams:
+    post:
+      summary: Crear un examen
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_code, date, time, name]
+              properties:
+                subject_code: { type: string }
+                date: { type: string, format: date }
+                time: { type: string, format: time }
+                name: { type: string }
+      responses:
+        '201':
+          description: Examen creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exam'
+
+    get:
+      summary: Listar exámenes con filtros
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          schema: { type: integer }
+        - name: subject
+          in: query
+          schema: { type: string }
+        - name: student_id
+          in: query
+          schema: { type: integer }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, CORRECTED, REVIEW_REQUESTED, CLOSED]
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Lista de exámenes paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExamResponse'
+        '403':
+          description: Sin permisos de historial
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /exams/{exam_id}/graders:
+    post:
+      summary: Asignar correctores a un examen
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: exam_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                graders:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: Correctores asignados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exam'
+
+  /exams/{exam_id}/review-window:
+    post:
+      summary: Definir rango de revisión
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: exam_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                review_start: { type: string, format: date-time }
+                review_end: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Rango de revisión actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exam'
+
+  /exam-instances/{id}:
+    get:
+      summary: Obtener instancia de examen y sus anotaciones
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Instancia obtenida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExamInstance'
+        '403':
+          description: Sin permisos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /exam-instances/{id}/annotations:
+    post:
+      summary: Crear anotación
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Annotation'
+      responses:
+        '201':
+          description: Anotación creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExamInstance'
+
+  /annotations/{id}:
+    put:
+      summary: Modificar anotación
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Annotation'
+      responses:
+        '200':
+          description: Anotación modificada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Annotation'
+    delete:
+      summary: Eliminar anotación
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Anotación eliminada
+
+  /exam-instances/{id}/grade:
+    post:
+      summary: Calificar examen
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                grade:
+                  type: number
+                author:
+                  type: string
+      responses:
+        '200':
+          description: Examen calificado
+
+  /exam-instances/{id}/review-request:
+    post:
+      summary: Solicitar revisión de examen
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment: { type: string }
+      responses:
+        '200':
+          description: Revisión solicitada
